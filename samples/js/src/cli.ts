@@ -15,6 +15,7 @@ import {
   // Type for the agent card
   AgentCard,
 } from "./schema.js";
+import { agentSelect } from './multiagent/index.js';
 
 // --- ANSI Colors ---
 const colors = {
@@ -41,9 +42,14 @@ function generateTaskId(): string {
 
 // --- State ---
 let currentTaskId: string = generateTaskId();
-const serverUrl = process.argv[2] || "http://localhost:41241";
+const serverUrl = process.argv[2] || "http://localhost:41242";
 const client = new A2AClient(serverUrl);
 let agentName = "Agent"; // Default, try to get from agent card later
+let agentCards: AgentCard[] = []
+
+const serverUrlList = ["http://localhost:41241", "http://localhost:41242"];
+const clientList = []
+
 
 // --- Readline Setup ---
 const rl = readline.createInterface({
@@ -102,8 +108,7 @@ function printAgentEvent(
   else if ("artifact" in event) {
     const update = event as TaskArtifactUpdateEvent; // Cast for type safety
     console.log(
-      `${prefix} 📄 Artifact Received: ${
-        update.artifact.name || "(unnamed)"
+      `${prefix} 📄 Artifact Received: ${update.artifact.name || "(unnamed)"
       } (Index: ${update.artifact.index ?? 0})`
     );
     printMessageContent({ role: "agent", parts: update.artifact.parts }); // Reuse message printing logic
@@ -125,10 +130,8 @@ function printMessageContent(message: Message) {
     } else if ("file" in part) {
       const filePart = part as FilePart;
       console.log(
-        `${partPrefix} ${colorize("blue", "📄 File:")} Name: ${
-          filePart.file.name || "N/A"
-        }, Type: ${filePart.file.mimeType || "N/A"}, Source: ${
-          filePart.file.bytes ? "Inline (bytes)" : filePart.file.uri
+        `${partPrefix} ${colorize("blue", "📄 File:")} Name: ${filePart.file.name || "N/A"
+        }, Type: ${filePart.file.mimeType || "N/A"}, Source: ${filePart.file.bytes ? "Inline (bytes)" : filePart.file.uri
         }`
       );
       // Avoid printing large byte strings
@@ -146,7 +149,7 @@ function printMessageContent(message: Message) {
 }
 
 // --- Agent Card Fetching ---
-async function fetchAndDisplayAgentCard() {
+async function fetchAndDisplayAgentCard(serverUrl: string) {
   const wellKnownUrl = new URL("/.well-known/agent.json", serverUrl).toString();
   console.log(
     colorize("dim", `Attempting to fetch agent card from: ${wellKnownUrl}`)
@@ -155,7 +158,14 @@ async function fetchAndDisplayAgentCard() {
     const response = await fetch(wellKnownUrl);
     if (response.ok) {
       const card: AgentCard = await response.json();
-      agentName = card.name || "Agent"; // Update global agent name
+      agentCards.push(card);
+      clientList.push({
+        name: card.name,
+        client: new A2AClient(serverUrl)
+      });
+
+      // agentName = card.name || "Agent"; // Update global agent name
+      agentName = 'Agent';
       console.log(colorize("green", `✓ Agent Card Found:`));
       console.log(`  Name:        ${colorize("bright", agentName)}`);
       if (card.description) {
@@ -185,7 +195,9 @@ async function main() {
   console.log(colorize("bright", `A2A Terminal Client`));
   console.log(colorize("dim", `Agent URL: ${serverUrl}`));
 
-  await fetchAndDisplayAgentCard(); // Fetch the card before starting the loop
+  serverUrlList.forEach(async (item) => {
+    await fetchAndDisplayAgentCard(item); // Fetch the card before starting the loop
+  })
 
   console.log(colorize("dim", `Starting Task ID: ${currentTaskId}`));
   console.log(
@@ -221,10 +233,14 @@ async function main() {
       },
     };
 
+    const agent = await agentSelect(input, agentCards);
+    const client = clientList.find(item => item.name === agent.name).client
+
     try {
       console.log(colorize("gray", "Sending...")); // Indicate request is sent
       // Pass only the params object to the client method
       const stream = client.sendTaskSubscribe(params);
+
       // Iterate over the unwrapped event payloads
       for await (const event of stream) {
         printAgentEvent(event); // Use the updated handler function

@@ -124,10 +124,10 @@ async function* coderAgent({
       parts: [
         {
           type: "text",
-          text:
-            generatedFiles.length > 0
-              ? `Generated files: ${generatedFiles.join(", ")}`
-              : "Completed, but no files were generated.",
+          text: fullMessage.content,
+            // generatedFiles.length > 0
+            //   ? `Generated files: ${generatedFiles.join(", ")}`
+            //   : "Completed, but no files were generated.",
         },
       ],
     },
@@ -178,7 +178,7 @@ const server = new A2AServer(coderAgent, {
   card: coderAgentCard,
 });
 
-server.start(); // Default port 41241
+server.start(41241); // Default port 41241
 
 console.log("[CoderAgent] Server started on http://localhost:41241");
 console.log("[CoderAgent] Press Ctrl+C to stop the server");
